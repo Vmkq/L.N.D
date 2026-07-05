@@ -413,13 +413,17 @@ class LNDLoader(tk.Tk):
             self._log(f"pip error: {e}")
 
     def _download_files(self) -> bool:
-        """Download all files from the GitHub repo into INSTALL_DIR."""
+        """
+        Download all files from GitHub.
+        .py files come from raw repo (under 25MB fine).
+        .exe comes from GitHub Releases (no size limit).
+        """
         try:
             os.makedirs(INSTALL_DIR, exist_ok=True)
             modules_dir = os.path.join(INSTALL_DIR, "modules")
             os.makedirs(modules_dir, exist_ok=True)
 
-            # File list to download
+            # ── Python source files from raw repo ─────────────────────────
             files = [
                 "main.py",
                 "version.json",
@@ -434,10 +438,7 @@ class LNDLoader(tk.Tk):
                 "modules/settings_tab.py",
                 "modules/upload_timer_tab.py",
             ]
-
-            # Also download logo/icon and exe if present
-            extras = ["logo.png", "logo_bg.png", "icon.ico",
-                      "LND Tribe Logs.exe"]
+            extras = ["logo.png", "logo_bg.png", "icon.ico"]
 
             for f in files + extras:
                 url  = f"{RAW_BASE}/{f}"
@@ -447,11 +448,31 @@ class LNDLoader(tk.Tk):
                     urllib.request.urlretrieve(url, dest)
                     self._log(f"  ↓ {f}")
                 except Exception:
-                    # extras are optional
                     if f in extras:
-                        pass
+                        pass   # optional
                     else:
                         self._log(f"  ✗ Failed: {f}")
+
+            # ── Main .exe from GitHub Releases ────────────────────────────
+            # URL format: github.com/USER/REPO/releases/download/TAG/FILE
+            exe_name    = "LND.Tribe.Logs.exe"
+            release_tag = "v1.0.0"
+            exe_url  = (f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}"
+                        f"/releases/download/{release_tag}/"
+                        f"{exe_name.replace(' ', '%20')}")
+            exe_dest = os.path.join(INSTALL_DIR, exe_name)
+            self._log(f"  ↓ Downloading {exe_name} from Releases...")
+            try:
+                urllib.request.urlretrieve(exe_url, exe_dest)
+                self._log(f"  ✅ {exe_name} downloaded")
+            except Exception as e:
+                self._log(f"  ⚠ Could not download exe: {e}")
+                self._log(f"  App will run via Python instead.")
+
+            return True
+        except Exception as e:
+            self._log(f"Download error: {e}")
+            return False
 
             return True
         except Exception as e:

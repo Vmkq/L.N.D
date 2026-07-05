@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
-  "notes": "Initial release — tribe log scanner, parasaur detection, member tracking, upload timer, generators, server tracker",
-  "updated": "2026-07-01"
+  "version": "1.1.0",
+  "notes": "License system, tab locking, server tracker, purple theme",
+  "updated": "2026-07-05"
 }

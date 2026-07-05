@@ -51,21 +51,32 @@ def get_hwid() -> str:
 def validate_key(key: str, hwid: str, username: str = "") -> tuple:
     """
     Validate key against server.
+    Retries once to handle Render free tier cold start (can take 30-60s).
     Returns (valid: bool, message: str)
     """
     if not HAS_REQUESTS:
         return False, "requests library not installed."
-    try:
-        r = requests.post(
-            f"{LICENSE_SERVER}/validate",
-            json={"key": key, "hwid": hwid, "username": username},
-            timeout=8)
-        data = r.json()
-        return data.get("valid", False), data.get("message", "Unknown error")
-    except requests.exceptions.ConnectionError:
-        return False, "Cannot reach license server. Check your internet connection."
-    except Exception as e:
-        return False, f"Server error: {e}"
+
+    for attempt in range(2):   # try twice
+        try:
+            r = requests.post(
+                f"{LICENSE_SERVER}/validate",
+                json={"key": key, "hwid": hwid, "username": username},
+                timeout=30)   # 30s timeout for cold start
+            data = r.json()
+            return data.get("valid", False), data.get("message", "Unknown error")
+        except requests.exceptions.ConnectionError:
+            if attempt == 0:
+                time.sleep(3)
+                continue
+            return False, "Cannot reach license server. Check your internet connection."
+        except requests.exceptions.Timeout:
+            if attempt == 0:
+                continue   # retry once on timeout
+            return False, "License server is waking up — please try again in 30 seconds."
+        except Exception as e:
+            return False, f"Server error: {e}"
+    return False, "Could not connect to license server."
 
 
 class LicenseTab(tk.Frame):
@@ -170,12 +181,10 @@ class LicenseTab(tk.Frame):
     def _on_result(self, ok: bool, msg: str, key: str):
         self.btn.config(state="normal")
         if ok:
-            # Extract assigned_to from message if present
             assigned = self.app.config_data.get("assigned_to", "")
             self.app.config_data["license_key"] = key
             self.app.config_data["licensed"]    = True
             if "welcome back" in msg.lower() or "activated for" in msg.lower():
-                # try to pull name from message
                 parts = msg.split(",")
                 if len(parts) > 1:
                     assigned = parts[-1].strip().rstrip("!")
@@ -186,6 +195,8 @@ class LicenseTab(tk.Frame):
             self.status_lbl.config(text=f"✅  {msg}", fg=TEXT_OK)
             self.btn.config(text="RE-VALIDATE", bg=ACCENT_DIM)
             self.app.set_status("License activated", TEXT_OK)
+            # Unlock all other tabs
+            self.app.unlock_tabs()
         else:
             self.app.config_data["licensed"] = False
             save_config(self.app.config_data)
@@ -201,5 +212,12 @@ class LicenseTab(tk.Frame):
             if "invalid" in msg.lower() or "revoked" in msg.lower():
                 self.app.config_data["licensed"] = False
                 save_config(self.app.config_data)
-                self.after(0, self.status_lbl.config,
-                           {"text": f"❌ {msg}", "fg": TEXT_DANGER})
+                self.after(0, self._force_lock, msg)
+
+    def _force_lock(self, msg: str):
+        """Lock all tabs and show revoked message."""
+        self.app._apply_lock()
+        self.app.notebook.select(0)   # force back to license tab
+        self.status_lbl.config(
+            text=f"❌ {msg}", fg=TEXT_DANGER)
+        self.app.set_status("License invalid — access revoked", TEXT_DANGER)

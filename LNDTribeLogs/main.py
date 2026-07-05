@@ -71,6 +71,11 @@ class LNDApp(tk.Tk):
         self._build_tabs()
         self._build_statusbar()
 
+        # If already licensed from previous session, unlock after brief delay
+        # (delay lets the UI fully render first)
+        if self.config_data.get("licensed"):
+            self.after(500, self.unlock_tabs)
+
     # ── TTK styles ────────────────────────────────────────────────────────────
     def _build_styles(self):
         s = ttk.Style(self)
@@ -186,11 +191,11 @@ class LNDApp(tk.Tk):
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True)
 
-        from modules.license_tab      import LicenseTab
-        from modules.generators_tab   import GeneratorsTab
-        from modules.settings_tab     import SettingsTab
-        from modules.monitor_tab      import MonitorTab
-        from modules.upload_timer_tab import UploadTimerTab
+        from modules.license_tab        import LicenseTab
+        from modules.generators_tab     import GeneratorsTab
+        from modules.settings_tab       import SettingsTab
+        from modules.monitor_tab        import MonitorTab
+        from modules.upload_timer_tab   import UploadTimerTab
         from modules.server_tracker_tab import ServerTrackerTab
 
         self.tab_license    = LicenseTab(self.notebook, self)
@@ -206,6 +211,25 @@ class LNDApp(tk.Tk):
         self.notebook.add(self.tab_monitor,    text="  MONITOR  ")
         self.notebook.add(self.tab_upload,     text="  UPLOAD TIMER  ")
         self.notebook.add(self.tab_server,     text="  SERVER TRACKER  ")
+
+        # Lock all tabs except LICENSE until validated
+        self._locked = True
+        self._apply_lock()
+
+    def _apply_lock(self):
+        """Disable all tabs except LICENSE. Called on startup."""
+        tab_count = self.notebook.index("end")
+        for i in range(1, tab_count):   # skip index 0 = LICENSE
+            self.notebook.tab(i, state="disabled")
+
+    def unlock_tabs(self):
+        """Called by LicenseTab after successful validation."""
+        self._locked = False
+        tab_count = self.notebook.index("end")
+        for i in range(tab_count):
+            self.notebook.tab(i, state="normal")
+        self.notebook.select(3)   # jump to MONITOR tab after unlock
+        self.set_status("Licensed — all features unlocked", TEXT_OK)
 
     # ── Status bar ────────────────────────────────────────────────────────────
     def _build_statusbar(self):
